@@ -9,7 +9,7 @@ async def list_posts():
     return list(posts.values())
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_post(post_data: PostCreate):
     post_id = len(posts) + 1
     posts[post_id] = Post(id=post_id, title=post_data.title)

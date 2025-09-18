@@ -5,3 +5,5 @@ ruff==0.13.0
 pytest==8.4.2
 pytest-asyncio==1.2.0
 httpx==0.28.1
+sqlalchemy==2.0.20
+databases[aiosqlite]==0.7.1
