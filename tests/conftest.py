@@ -1,13 +1,17 @@
 from typing import AsyncGenerator, Generator
+import os
 
 import pytest
+
+os.environ["ENV_STATE"] = "test"
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 from httpx import ASGITransport
 
+from database import database
 
 from main import app
-from models.post import posts
+
 
 @pytest.fixture(scope="session")
 def anyio_backend():
@@ -20,11 +24,10 @@ def client() -> Generator:
     yield TestClient(app)
 
 @pytest.fixture(autouse=True)
-def db():
-    """Synchronous autouse fixture to reset in-memory posts between tests."""
-    print("Setting up DB")
-    posts.clear()  # Clear the in-memory posts before each test
+async def db() -> AsyncGenerator:
+    await database.connect()
     yield
+    await database.disconnect()
 
 
 @pytest.fixture
