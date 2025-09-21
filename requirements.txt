@@ -9,3 +9,4 @@ sqlalchemy==2.0.20
 databases[aiosqlite]==0.9.0
 python-dotenv==1.0.0
 rich
+asgi-correlation-id
