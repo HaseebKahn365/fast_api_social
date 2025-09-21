@@ -4,11 +4,19 @@ import os
 
 from database import database
 from routers.post import router as posts_router
+from logging_conf import configure_logging
+import logging
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await database.connect()
+    configure_logging()
+    logger.info("FASTAPI startup complete.")
     yield
     await database.disconnect()
 
