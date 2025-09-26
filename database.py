@@ -1,48 +1,55 @@
 import databases
-
 import sqlalchemy
-from config import config
+
+from storeapi.config import config
 
 metadata = sqlalchemy.MetaData()
-
 
 post_table = sqlalchemy.Table(
     "posts",
     metadata,
     sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-    sqlalchemy.Column("title", sqlalchemy.String, nullable=False),
+    sqlalchemy.Column("body", sqlalchemy.String),
+    sqlalchemy.Column("user_id", sqlalchemy.ForeignKey("users.id"), nullable=False),
+    sqlalchemy.Column("image_url", sqlalchemy.String)
 )
 
 user_table = sqlalchemy.Table(
     "users",
     metadata,
     sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-    sqlalchemy.Column("username", sqlalchemy.String, nullable=False, unique=True),
-    sqlalchemy.Column("email", sqlalchemy.String, nullable=False, unique=True),
+    sqlalchemy.Column("email", sqlalchemy.String, unique=True),
+    sqlalchemy.Column("password", sqlalchemy.String),
+    sqlalchemy.Column("confirmed", sqlalchemy.Boolean, default=False)
 )
+
+
 comment_table = sqlalchemy.Table(
     "comments",
     metadata,
     sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-    sqlalchemy.Column("post_id", sqlalchemy.Integer, sqlalchemy.ForeignKey("posts.id"), nullable=False),
-    sqlalchemy.Column("content", sqlalchemy.String, nullable=False),
+    sqlalchemy.Column("body", sqlalchemy.String),
+    sqlalchemy.Column("post_id", sqlalchemy.ForeignKey("posts.id"), nullable=False),
+    sqlalchemy.Column("user_id", sqlalchemy.ForeignKey("users.id"), nullable=False)
 )
 
-# SQLAlchemy sync engine for running DDL (create_all) synchronously.
-# If using an async driver like aiosqlite we convert the URL to the sync sqlite URL
-# so SQLAlchemy can open a normal DBAPI connection for table creation.
-sync_db_url = config.DATABASE_URL
-if sync_db_url and sync_db_url.startswith("sqlite+aiosqlite://"):
-    # convert 'sqlite+aiosqlite:///./test.db' -> 'sqlite:///./test.db'
-    sync_db_url = sync_db_url.replace("+aiosqlite", "")
+like_table = sqlalchemy.Table(
+    "likes",
+    metadata,
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
+    sqlalchemy.Column("post_id", sqlalchemy.ForeignKey("posts.id"), nullable=False),
+    sqlalchemy.Column("user_id", sqlalchemy.ForeignKey("users.id"), nullable=False)
+)
 
 engine = sqlalchemy.create_engine(
-    sync_db_url,
-    connect_args={"check_same_thread": False} if "sqlite" in sync_db_url else {},
+    config.DATABASE_URL, connect_args={"check_same_thread": False}
 )
 
-# Create tables synchronously on startup/import (safe now with sync engine)
-metadata.create_all(engine)
+# Reset schema in tests to ensure new columns exist
+if config.DATABASE_URL and config.DATABASE_URL.endswith("test.db"):
+    metadata.drop_all(engine)
 
-# Async Database instance used by the app
-database = databases.Database(config.DATABASE_URL, force_rollback=config.BD_FORCE_ROLLBACK)
+metadata.create_all(engine)
+database = databases.Database(
+    config.DATABASE_URL, force_rollback=config.DB_FORCE_ROLL_BACK
+)

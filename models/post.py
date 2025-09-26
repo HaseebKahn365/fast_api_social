@@ -1,33 +1,47 @@
-from pydantic import BaseModel
-from typing import List
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
 
 
-class Comment(BaseModel):
+class UserPostIn(BaseModel):
+    body: str
+
+
+class UserPost(UserPostIn):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
-    post_id: int
-    content: str
-    
-    class Config:
-        orm_mode = True
+    user_id: int
+    image_url: Optional[str] = None
 
 
-class Post(BaseModel):
-    id: int
-    title: str
-    comments: List[Comment] = []
-    
-    class Config:
-        orm_mode = True
+class UserPostWithLikes(UserPost):
+    model_config = ConfigDict(from_attributes=True)
 
+    likes: int
 
 
 class CommentIn(BaseModel):
-    content: str
+    body: str
+    post_id: int
 
 
-class PostIn(BaseModel):
-    title: str
+class Comment(CommentIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
 
 
-class PostInWithComments(PostIn):
-    comments: List[Comment] = []
+class UserPostWithComments(BaseModel):
+    post: UserPostWithLikes
+    comments: list[Comment]
+
+
+class PostLikeIn(BaseModel):
+    post_id: int
+
+
+class PostLike(PostLikeIn):
+    id: int
+    user_id: int

@@ -1,137 +1,94 @@
+import logging
 from logging.config import dictConfig
 
-from config import DevConfig, config
-import rich.pretty
-import rich.traceback
-import os
+from storeapi.config import DevConfig, ProdConfig, config
+
+
+def obfuscated(email: str, obfuscated_length: int) -> str:
+    characters = email[:obfuscated_length]
+    first, last = email.split("@")
+    return characters + ("*" * (len(first) - obfuscated_length)) + "@" + last
+
+
+class EmailObfuscationFilter(logging.Filter):
+    def __init__(self, name: str = "", obfuscated_length: int = 2) -> None:
+        super().__init__(name)
+        self.obfuscated_length = obfuscated_length
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if "email" in record.__dict__:
+            record.email = obfuscated(record.email, self.obfuscated_length)
+        return True
+
+
+handlers = ["default", "rotating_file"]
+# Disable logtail in tests to avoid missing dependency/config
+# if isinstance(config, ProdConfig):
+#     handlers = ["default", "rotating_file", "logtail"]
 
 
 def configure_logging() -> None:
-    # Install rich pretty and traceback handlers so objects and tracebacks are
-    # rendered with Rich throughout the process.
-    rich.pretty.install()
-    rich.traceback.install()
-
-    # Unified formatter used across all handlers so logs look identical.
-    # Include correlation id injected by the CorrelationIdFilter.
-    unified_format = "%(levelname)s [cid=%(correlation_id)s] %(filename)s:%(lineno)d - %(message)s"
-
-    # Ensure the logs directory exists for the RotatingFileHandler
-    try:
-        os.makedirs("logs", exist_ok=True)
-    except Exception:
-        # If directory can't be created, let dictConfig fail later with
-        # a clear error; we don't want to crash here during import.
-        pass
-
-    # Determine uuid length for correlation ids per environment
-    uuid_length = 8 if isinstance(config, DevConfig) else 32
-    # Determine how many local-part chars to show for email obfuscation
-    show_local = 1 if isinstance(config, DevConfig) else 0
-
     dictConfig(
         {
             "version": 1,
             "disable_existing_loggers": False,
             "filters": {
                 "correlation_id": {
-                    "()": "correlation.CorrelationIdFilter",
-                    "uuid_length": uuid_length,
-                    "default_value": "",
-                }
-                ,
+                    "()": "asgi_correlation_id.CorrelationIdFilter",
+                    "uuid_length": 8 if isinstance(config, DevConfig) else 32,
+                    "default_value": "-",
+                },
                 "email_obfuscation": {
-                    "()": "logging_filters.EmailObfuscationFilter",
-                    "show_local": show_local,
-                    "replacement": "***",
-                }
+                    "()": EmailObfuscationFilter,
+                    "obfuscated_length": 2 if isinstance(config, DevConfig) else 0,
+                },
             },
             "formatters": {
-                "unified": {
+                "console": {
                     "class": "logging.Formatter",
-                    "datefmt": "%Y-%m-%d %H:%M:%S",
-                    "format": unified_format,
-                }
-                ,
-                # File formatter uses JSON output via python-json-logger
+                    "datefmt": "%Y-%m-%dT%H:%M:%S",
+                    "format": "(%(correlation_id)s) %(name)s:%(lineno)d - %(message)s",
+                },
                 "file": {
-                    "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
-                    "fmt": "%(asctime)s %(levelname)s %(name)s %(correlation_id)s %(filename)s %(lineno)d %(message)s",
-                }
+                    "class": "pythonjsonlogger.jsonlogger.JsonFormatter",
+                    "datefmt": "%Y-%m-%dT%H:%M:%S",
+                    "format": "%(asctime)s %(msecs)03d %(levelname)s %(correlation_id)s %(name)s %(lineno)d %(message)s",
+                },
             },
             "handlers": {
-                # All handlers use RichHandler but share the same formatter
-                # to ensure consistent output styling.
                 "default": {
                     "class": "rich.logging.RichHandler",
                     "level": "DEBUG",
-                    "show_path": True,
-                    "rich_tracebacks": True,
-                    "markup": True,
-                    "formatter": "unified",
-                    "filters": ["correlation_id", "email_obfuscation"],
+                    "formatter": "console",
+                    "filters": ["correlation_id", "email_obfuscation"]
                 },
-                "secondary": {
-                    "class": "rich.logging.RichHandler",
-                    "level": "INFO",
-                    "show_path": True,
-                    "rich_tracebacks": False,
-                    "markup": True,
-                    "formatter": "unified",
-                    "filters": ["correlation_id", "email_obfuscation"],
-                },
-                # Rotating file handler for persistent logs
-                "file": {
+                "rotating_file": {
                     "class": "logging.handlers.RotatingFileHandler",
                     "level": "DEBUG",
                     "formatter": "file",
-                    "filename": "logs/app.log",
-                    "maxBytes": 1048576,  # 1 MB
-                    "backupCount": 3,
-                    "encoding": "utf-8",
-                    "filters": ["correlation_id", "email_obfuscation"],
+                    "filename": "storeapi.log",
+                    "maxBytes": 1024 * 1024,  # 1MB
+                    "backupCount": 5,
+                    "encoding": "utf8",
+                    "filters": ["correlation_id", "email_obfuscation"]
                 },
+                # "logtail": {
+                #     "class": "logtail.LogtailHandler",
+                #     "level": "DEBUG",
+                #     "formatter": "console",
+                #     "filters": ["correlation_id", "email_obfuscation"],
+                #     "source_token": config.LOGTAIL_API_KEY
+                # }
             },
             "loggers": {
+                "uvicorn": {"handlers": ["default", "rotating_file"], "level": "INFO"},
                 "storeapi": {
-                    "handlers": ["default"],
+                    "handlers": handlers,
                     "level": "DEBUG" if isinstance(config, DevConfig) else "INFO",
-                    "propagate": False,
+                    "propagate": False
                 },
-                # databases (the `databases` package) logs queries/debug info
-                "databases": {
-                    "handlers": ["secondary"],
-                    "level": "INFO",
-                    "propagate": False,
-                },
-                # aiosqlite internals
-                "aiosqlite": {
-                    "handlers": ["secondary"],
-                    "level": "INFO",
-                    "propagate": False,
-                },
-            },
-            # Make the root logger use the rich handler so third-party
-            # libraries (uvicorn, fastapi) also get Rich formatting.
-            "root": {
-                "handlers": ["default", "file"],
-                "level": "DEBUG" if isinstance(config, DevConfig) else "INFO",
-            },
-            # Explicit uvicorn loggers; access uses the secondary handler
-            "uvicorn": {
-                "handlers": ["default"],
-                "level": "INFO",
-                "propagate": False,
-            },
-            "uvicorn.error": {
-                "handlers": ["default"],
-                "level": "INFO",
-                "propagate": False,
-            },
-            "uvicorn.access": {
-                "handlers": ["secondary"],
-                "level": "INFO",
-                "propagate": False,
-            },
+                "databases": {"handlers": ["default"], "level": "WARNING"},
+                "aiosqlite": {"handlers": ["default"], "level": "WARNING"}
+            }
         }
     )

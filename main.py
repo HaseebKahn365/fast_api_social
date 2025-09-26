@@ -1,29 +1,29 @@
-from fastapi import FastAPI
+import logging
 from contextlib import asynccontextmanager
 import os
 
-from database import database
-from routers.post import router as posts_router
-from logging_conf import configure_logging
-import logging
+from fastapi import FastAPI
+from fastapi.exception_handlers import http_exception_handler
 from fastapi import HTTPException as HttpException
-from correlation import CorrelationIdMiddleware
-from logging_filters import EmailObfuscationFilter
-from routers.user import router as user_router
 
+from asgi_correlation_id import CorrelationIdMiddleware
+from storeapi.database import database
+from storeapi.logging_conf import configure_logging
+from storeapi.routers.post import router as post_router
+from storeapi.routers.upload import router as upload_router
+from storeapi.routers.user import router as user_router
 
-# Do not call logging.basicConfig() here — dictConfig in logging_conf
-# will configure handlers. calling basicConfig() may add the default
-# StreamHandler and cause duplicate output.
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     await database.connect()
     logger.info("FASTAPI startup complete.")
     yield
     await database.disconnect()
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -46,9 +46,17 @@ app.add_middleware(CorrelationIdMiddleware)
 
 print("Hi this is environ variable", os.environ.get('DATABASE_URL'))
 
-# Include the posts router
-app.include_router(posts_router, prefix="/posts", tags=["posts"])
-app.include_router(user_router, prefix="/users", tags=["users"])
+# Include routers at root to match tests
+app.include_router(post_router, tags=["posts"])
+app.include_router(upload_router, tags=["upload"])
+app.include_router(user_router, tags=["users"])
+
+
+@app.exception_handler(HttpException)
+async def http_exception_handle_logging(request, exc):
+    logger.error(f"HTTPException: {exc.status_code} {exc.detail}")
+    return await http_exception_handler(request, exc)
+
 
 @app.get("/")
 def read_root():
