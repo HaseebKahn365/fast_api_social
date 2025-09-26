@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient
 from httpx import ASGITransport
 
-from database import database
+from database import database, user_table
 
 from main import app
 
@@ -18,7 +18,7 @@ def anyio_backend():
     return "asyncio"
 
 
-@pytest.fixture
+@pytest.fixture()
 def client() -> Generator:
     print("Setting up TestClient")
     yield TestClient(app)
@@ -29,8 +29,24 @@ async def db() -> AsyncGenerator:
     yield
     await database.disconnect()
 
+@pytest.fixture()
+async def registered_user(async_client: AsyncClient) -> dict:
+    user_details = {"email": "test@example.net", "password": "1234"}
+    response = await async_client.post("/users/register", json=user_details)
+    
+    # CRITICAL: Fail if registration fails
+    assert response.status_code == 200, f"Registration failed: {response.json()}"
+    
+    query = user_table.select().where(user_table.c.email == user_details["email"])
+    user = await database.fetch_one(query)
+    
+    # CRITICAL: Fail if user is not found in DB
+    assert user is not None, "User registered but not found in database."
+    
+    user_details["id"] = user["id"]
+    return user_details
 
-@pytest.fixture
+@pytest.fixture()
 async def async_client() -> AsyncGenerator:
     # use ASGITransport so httpx AsyncClient works with FastAPI app
     transport = ASGITransport(app=app)
@@ -39,4 +55,3 @@ async def async_client() -> AsyncGenerator:
 
 
 
-        

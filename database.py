@@ -13,6 +13,13 @@ post_table = sqlalchemy.Table(
     sqlalchemy.Column("title", sqlalchemy.String, nullable=False),
 )
 
+user_table = sqlalchemy.Table(
+    "users",
+    metadata,
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
+    sqlalchemy.Column("username", sqlalchemy.String, nullable=False, unique=True),
+    sqlalchemy.Column("email", sqlalchemy.String, nullable=False, unique=True),
+)
 comment_table = sqlalchemy.Table(
     "comments",
     metadata,

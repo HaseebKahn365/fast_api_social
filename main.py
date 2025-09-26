@@ -9,6 +9,7 @@ import logging
 from fastapi import HTTPException as HttpException
 from correlation import CorrelationIdMiddleware
 from logging_filters import EmailObfuscationFilter
+from routers.user import router as user_router
 
 
 # Do not call logging.basicConfig() here — dictConfig in logging_conf
@@ -47,6 +48,7 @@ print("Hi this is environ variable", os.environ.get('DATABASE_URL'))
 
 # Include the posts router
 app.include_router(posts_router, prefix="/posts", tags=["posts"])
+app.include_router(user_router, prefix="/users", tags=["users"])
 
 @app.get("/")
 def read_root():
